@@ -1,55 +1,14 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import sqlite3
 from datetime import datetime
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import os
 
 app = Flask(__name__)
 CORS(app)
 
 DB_NAME = 'pg_leads.db'
-ADMIN_PASSWORD = 'admin@123'  # You can change this anytime
-
-# --- Owner Notification Setup ---
-ENABLE_EMAIL = False  # Switch to True when you want live Gmail alerts
-SENDER_EMAIL = "amritpratyush84@gmail.com"
-SENDER_APP_PASSWORD = "your_16_digit_gmail_app_password"  # Replace with Google App Password
-OWNER_RECEIVER_EMAIL = "amritpratyush84@gmail.com"
-
-def send_email_alert(name, phone, room_type, visit_date):
-    if not ENABLE_EMAIL:
-        return
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = OWNER_RECEIVER_EMAIL
-        msg['Subject'] = f"🔔 New PG Visit Request: {name} ({room_type})"
-
-        body = f"""
-        Hello Amrit,
-
-        A new visit request has been submitted on UrbanNest Living:
-
-        • Visitor Name: {name}
-        • Contact Phone: {phone}
-        • Room Preference: {room_type}
-        • Preferred Date: {visit_date}
-
-        Regards,
-        UrbanNest Lead System
-        """
-        msg.attach(MIMEText(body, 'plain'))
-
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
-        server.send_message(msg)
-        server.quit()
-        print("📧 [EMAIL SENT]: Notification sent to amritpratyush84@gmail.com")
-    except Exception as e:
-        print(f"⚠️ [EMAIL ERROR]: {e}")
+ADMIN_PASSWORD = 'admin@123'
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -69,6 +28,7 @@ def init_db():
 
 init_db()
 
+# --- API Routes ---
 @app.route('/api/inquire', methods=['POST'])
 def add_inquiry():
     data = request.get_json()
@@ -87,10 +47,8 @@ def add_inquiry():
     conn.commit()
     conn.close()
 
-    print(f"\n🔔 [NEW LEAD RECEIVED]: {name} | Phone: {phone} | Room: {room_type} | Date: {visit_date}\n")
-    send_email_alert(name, phone, room_type, visit_date)
-
-    return jsonify({"status": "success", "message": "Inquiry saved"}), 201
+    print(f"\n🔔 [NEW LEAD]: {name} | {phone} | {room_type} | {visit_date}\n")
+    return jsonify({"status": "success", "message": "Inquiry recorded!"}), 201
 
 @app.route('/api/leads', methods=['GET'])
 def get_leads():
@@ -123,5 +81,16 @@ def delete_lead(lead_id):
     conn.close()
     return jsonify({"status": "success", "message": "Lead deleted"}), 200
 
+# --- Frontend Serving Routes ---
+# --- Frontend Serving Routes ---
+@app.route('/')
+def serve_index():
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory(os.path.dirname(os.path.abspath(__file__)), path)
+
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
