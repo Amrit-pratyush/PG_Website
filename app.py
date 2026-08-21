@@ -28,14 +28,16 @@ def init_db():
 
 init_db()
 
-# --- API Routes ---
-@app.route('/api/inquire', methods=['POST'])
+@app.route('/api/inquire', methods=['POST', 'OPTIONS'])
 def add_inquiry():
-    data = request.get_json()
-    name = data.get('name')
-    phone = data.get('phone')
-    room_type = data.get('roomType')
-    visit_date = data.get('date')
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get('name', 'Anonymous')
+    phone = data.get('phone', 'N/A')
+    room_type = data.get('roomType', 'Standard')
+    visit_date = data.get('date', 'N/A')
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     conn = sqlite3.connect(DB_NAME)
@@ -47,7 +49,7 @@ def add_inquiry():
     conn.commit()
     conn.close()
 
-    print(f"\n🔔 [NEW LEAD]: {name} | {phone} | {room_type} | {visit_date}\n")
+    print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {room_type} | {visit_date}\n")
     return jsonify({"status": "success", "message": "Inquiry recorded!"}), 201
 
 @app.route('/api/leads', methods=['GET'])
@@ -81,8 +83,6 @@ def delete_lead(lead_id):
     conn.close()
     return jsonify({"status": "success", "message": "Lead deleted"}), 200
 
-# --- Frontend Serving Routes ---
-# --- Frontend Serving Routes ---
 @app.route('/')
 def serve_index():
     return send_from_directory(os.path.dirname(os.path.abspath(__file__)), 'index.html')

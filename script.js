@@ -1,4 +1,4 @@
-const API_URL = 'http://127.0.0.1:5000/api';
+const API_URL = window.location.origin + '/api';
 
 // UI Elements
 const bookingForm = document.getElementById('bookingForm');
