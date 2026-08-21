@@ -12,14 +12,19 @@ CORS(app)
 DB_NAME = 'pg_leads.db'
 ADMIN_PASSWORD = 'admin@123'
 
-# --- Resend HTTP Email Configuration ---
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()  # Paste your key starting with re_
+# --- Email Notification Configuration ---
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
 RECEIVER_EMAIL = "amritpratyush84@gmail.com"
 
 def send_email_worker(name, phone, room_type, visit_date, created_at):
-    """Sends email alert over HTTPS via Resend API (bypasses blocked SMTP ports)."""
-    if not RESEND_API_KEY or "your_resend_api_key" in RESEND_API_KEY:
-        print("⚠️ Email skipped: Resend API Key not configured.")
+    """Sends email alert over HTTPS via Resend API in a background thread."""
+    key = os.environ.get("RESEND_API_KEY", "").strip()
+    
+    # Diagnostic logging
+    print(f"DEBUG: Key length is {len(key)}, Key prefix: {key[:5]}...")
+
+    if not key:
+        print("❌ Error: RESEND_API_KEY environment variable is not configured on Render.")
         return
 
     subject = f"🏠 New PG Visit Inquiry: {name}"
@@ -43,13 +48,13 @@ def send_email_worker(name, phone, room_type, visit_date, created_at):
     }
 
     headers = {
-        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Authorization": f"Bearer {key}",
         "Content-Type": "application/json"
     }
 
     try:
         response = requests.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=10)
-        if response.status_code == 200 or response.status_code == 201:
+        if response.status_code in [200, 201]:
             print(f"✅ Email notification delivered successfully to {RECEIVER_EMAIL}")
         else:
             print(f"❌ Resend API Error ({response.status_code}): {response.text}")
@@ -91,6 +96,7 @@ def add_inquiry():
     visit_date = data.get('date', 'N/A')
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+    # Save to SQLite
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
@@ -100,7 +106,7 @@ def add_inquiry():
     conn.commit()
     conn.close()
 
-    # Trigger HTTP Email in Background Thread
+    # Trigger Non-Blocking Email Dispatch
     threading.Thread(target=send_email_worker, args=(name, phone, room_type, visit_date, created_at)).start()
 
     print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {room_type} | {visit_date}\n")
