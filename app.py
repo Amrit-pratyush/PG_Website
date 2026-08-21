@@ -14,7 +14,7 @@ DB_NAME = 'pg_leads.db'
 ADMIN_PASSWORD = 'admin@123'
 
 # --- Email Notification Configuration ---
-SENDER_EMAIL = "your_email@gmail.com"           # Your Gmail address
+SENDER_EMAIL = "amritpratyush84@gmail.com"           # Your Gmail address
 RECEIVER_EMAIL = "tsmcalaway@gmail.com"         # Where you want to receive the alerts
 GMAIL_APP_PASSWORD = "firypxscsjjslciz" # 16-letter app password (no spaces)
 
