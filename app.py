@@ -13,7 +13,7 @@ DB_NAME = 'pg_leads.db'
 ADMIN_PASSWORD = 'admin@123'
 
 # --- Resend HTTP Email Configuration ---
-RESEND_API_KEY = "re_NDuNmB16_TuEM5PnkAH3TaY2sz7j5QRkw"  # Paste your key starting with re_
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()  # Paste your key starting with re_
 RECEIVER_EMAIL = "amritpratyush84@gmail.com"
 
 def send_email_worker(name, phone, room_type, visit_date, created_at):
