@@ -1,8 +1,10 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response
 from flask_cors import CORS
 import sqlite3
 from datetime import datetime
 import os
+import csv
+import io
 
 app = Flask(__name__)
 CORS(app)
@@ -20,9 +22,15 @@ def init_db():
             phone TEXT NOT NULL,
             room_type TEXT NOT NULL,
             visit_date TEXT NOT NULL,
+            status TEXT DEFAULT 'New',
             created_at TEXT NOT NULL
         )
     ''')
+    # Add status column if existing database doesn't have it
+    try:
+        cursor.execute("ALTER TABLE inquiries ADD COLUMN status TEXT DEFAULT 'New'")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -43,8 +51,8 @@ def add_inquiry():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
-        'INSERT INTO inquiries (name, phone, room_type, visit_date, created_at) VALUES (?, ?, ?, ?, ?)',
-        (name, phone, room_type, visit_date, created_at)
+        'INSERT INTO inquiries (name, phone, room_type, visit_date, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        (name, phone, room_type, visit_date, 'New', created_at)
     )
     conn.commit()
     conn.close()
@@ -60,15 +68,31 @@ def get_leads():
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute('SELECT id, name, phone, room_type, visit_date, created_at FROM inquiries ORDER BY id DESC')
+    cursor.execute('SELECT id, name, phone, room_type, visit_date, status, created_at FROM inquiries ORDER BY id DESC')
     rows = cursor.fetchall()
     conn.close()
 
     leads = [
-        {"id": r[0], "name": r[1], "phone": r[2], "roomType": r[3], "date": r[4], "timestamp": r[5]}
+        {"id": r[0], "name": r[1], "phone": r[2], "roomType": r[3], "date": r[4], "status": r[5] or 'New', "timestamp": r[6]}
         for r in rows
     ]
     return jsonify(leads), 200
+
+@app.route('/api/leads/<int:lead_id>/status', methods=['PATCH'])
+def update_status(lead_id):
+    auth_header = request.headers.get('Authorization')
+    if auth_header != ADMIN_PASSWORD:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    new_status = data.get('status', 'New')
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE inquiries SET status = ? WHERE id = ?', (new_status, lead_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Status updated"}), 200
 
 @app.route('/api/leads/<int:lead_id>', methods=['DELETE'])
 def delete_lead(lead_id):
