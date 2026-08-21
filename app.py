@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime
 import os
 import smtplib
+import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -14,37 +15,33 @@ DB_NAME = 'pg_leads.db'
 ADMIN_PASSWORD = 'admin@123'
 
 # --- Email Notification Configuration ---
-SENDER_EMAIL = "amritpratyush84@gmail.com"           # Your Gmail address
-RECEIVER_EMAIL = "tsmcalaway@gmail.com"         # Where you want to receive the alerts
-GMAIL_APP_PASSWORD = "firypxscsjjslciz" # 16-letter app password (no spaces)
+SENDER_EMAIL = "amritpratyush84@gmail.com"
+RECEIVER_EMAIL = "tsmcalaway@gmail.com"
+GMAIL_APP_PASSWORD = "firypxscsjjslciz"
 
-def send_email_alert(name, phone, room_type, visit_date, created_at):
-    """Sends an instant email notification for every new inquiry."""
-    if "your_16_char_app_password" in GMAIL_APP_PASSWORD:
-        print("⚠️ Email alert skipped: App Password not configured.")
-        return
-
-    subject = f"🏠 New PG Visit Inquiry: {name}"
-    body = f"""
-    You have received a new PG visit inquiry!
-
-    👤 Guest Name: {name}
-    📞 Mobile No: {phone}
-    🛏️ Room Type: {room_type}
-    📅 Visit Date: {visit_date}
-    🕒 Inquiry Logged: {created_at}
-
-    Access your Admin Drawer on the website to manage this lead.
-    """
-
-    msg = MIMEMultipart()
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = RECEIVER_EMAIL
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
-
+def send_email_worker(name, phone, room_type, visit_date, created_at):
+    """Background task to send email without blocking the HTTP request."""
     try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        subject = f"🏠 New PG Visit Inquiry: {name}"
+        body = f"""
+        You have received a new PG visit inquiry!
+
+        👤 Guest Name: {name}
+        📞 Mobile No: {phone}
+        🛏️ Room Type: {room_type}
+        📅 Visit Date: {visit_date}
+        🕒 Inquiry Logged: {created_at}
+
+        Access your Admin Drawer on the website to manage this lead.
+        """
+
+        msg = MIMEMultipart()
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = RECEIVER_EMAIL
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
         server.starttls()
         server.login(SENDER_EMAIL, GMAIL_APP_PASSWORD.replace(" ", ""))
         server.send_message(msg)
@@ -98,8 +95,8 @@ def add_inquiry():
     conn.commit()
     conn.close()
 
-    # Trigger Instant Email Alert
-    send_email_alert(name, phone, room_type, visit_date, created_at)
+    # Trigger Email in Background Thread
+    threading.Thread(target=send_email_worker, args=(name, phone, room_type, visit_date, created_at)).start()
 
     print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {room_type} | {visit_date}\n")
     return jsonify({"status": "success", "message": "Inquiry recorded!"}), 201
