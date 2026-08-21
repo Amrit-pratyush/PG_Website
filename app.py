@@ -4,47 +4,37 @@ import sqlite3
 from datetime import datetime
 import os
 import requests
-import threading
 
 app = Flask(__name__)
 CORS(app)
 
 DB_NAME = 'pg_leads.db'
 ADMIN_PASSWORD = 'admin@123'
-
-# --- Email Notification Configuration ---
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "").strip()
 RECEIVER_EMAIL = "amritpratyush84@gmail.com"
 
-def send_email_worker(name, phone, room_type, visit_date, created_at):
-    """Sends email alert over HTTPS via Resend API in a background thread."""
+def send_resend_email(name, phone, room_type, visit_date, created_at):
+    """Sends email alert via Resend HTTPS REST API."""
     key = os.environ.get("RESEND_API_KEY", "").strip()
-    
-    # Diagnostic logging
-    print(f"DEBUG: Key length is {len(key)}, Key prefix: {key[:5]}...")
 
     if not key:
-        print("❌ Error: RESEND_API_KEY environment variable is not configured on Render.")
+        print("❌ Error: RESEND_API_KEY is empty on Render environment.")
         return
 
     subject = f"🏠 New PG Visit Inquiry: {name}"
-    body = f"""
-    <h3>You have received a new PG visit inquiry!</h3>
-    <ul>
-      <li><strong>Guest Name:</strong> {name}</li>
-      <li><strong>Mobile No:</strong> {phone}</li>
-      <li><strong>Room Type:</strong> {room_type}</li>
-      <li><strong>Visit Date:</strong> {visit_date}</li>
-      <li><strong>Inquiry Logged:</strong> {created_at}</li>
-    </ul>
-    <p>Access your Admin Drawer on the website to manage this lead.</p>
+    html_content = f"""
+    <h2>New PG Booking Inquiry Received!</h2>
+    <p><strong>Guest Name:</strong> {name}</p>
+    <p><strong>Mobile No:</strong> {phone}</p>
+    <p><strong>Room Type:</strong> {room_type}</p>
+    <p><strong>Visit Date:</strong> {visit_date}</p>
+    <p><strong>Time:</strong> {created_at}</p>
     """
 
     payload = {
         "from": "onboarding@resend.dev",
         "to": [RECEIVER_EMAIL],
         "subject": subject,
-        "html": body
+        "html": html_content
     }
 
     headers = {
@@ -53,13 +43,17 @@ def send_email_worker(name, phone, room_type, visit_date, created_at):
     }
 
     try:
-        response = requests.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=10)
+        print(f"📡 Sending email via Resend API to {RECEIVER_EMAIL}...")
+        response = requests.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=15)
+        print(f"📡 Resend Status Code: {response.status_code}")
+        print(f"📡 Resend Response: {response.text}")
+        
         if response.status_code in [200, 201]:
-            print(f"✅ Email notification delivered successfully to {RECEIVER_EMAIL}")
+            print(f"✅ Email delivered successfully to {RECEIVER_EMAIL}")
         else:
-            print(f"❌ Resend API Error ({response.status_code}): {response.text}")
-    except Exception as e:
-        print(f"❌ Failed to deliver email alert: {e}")
+            print(f"❌ Resend rejected the request: {response.text}")
+    except Exception as err:
+        print(f"❌ Request exception during email send: {err}")
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -96,7 +90,7 @@ def add_inquiry():
     visit_date = data.get('date', 'N/A')
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    # Save to SQLite
+    # 1. Save to Database
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
@@ -106,10 +100,11 @@ def add_inquiry():
     conn.commit()
     conn.close()
 
-    # Trigger Non-Blocking Email Dispatch
-    threading.Thread(target=send_email_worker, args=(name, phone, room_type, visit_date, created_at)).start()
+    print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {room_type} | {visit_date}")
 
-    print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {room_type} | {visit_date}\n")
+    # 2. Dispatch Email Synchronously
+    send_resend_email(name, phone, room_type, visit_date, created_at)
+
     return jsonify({"status": "success", "message": "Inquiry recorded!"}), 201
 
 @app.route('/api/leads', methods=['GET'])
