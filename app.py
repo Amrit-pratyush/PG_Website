@@ -3,10 +3,8 @@ from flask_cors import CORS
 import sqlite3
 from datetime import datetime
 import os
-import smtplib
+import requests
 import threading
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 CORS(app)
@@ -14,41 +12,49 @@ CORS(app)
 DB_NAME = 'pg_leads.db'
 ADMIN_PASSWORD = 'admin@123'
 
-# --- Email Notification Configuration ---
-SENDER_EMAIL = "amritpratyush84@gmail.com"
-RECEIVER_EMAIL = "tsmcalaway@gmail.com"
-GMAIL_APP_PASSWORD = "firypxscsjjslciz"
+# --- Resend HTTP Email Configuration ---
+RESEND_API_KEY = "re_NDuNmB16_TuEM5PnkAH3TaY2sz7j5QRkw"  # Paste your key starting with re_
+RECEIVER_EMAIL = "amritpratyush84@gmail.com"
 
 def send_email_worker(name, phone, room_type, visit_date, created_at):
-    """Background task to send email without blocking the HTTP request."""
+    """Sends email alert over HTTPS via Resend API (bypasses blocked SMTP ports)."""
+    if not RESEND_API_KEY or "your_resend_api_key" in RESEND_API_KEY:
+        print("⚠️ Email skipped: Resend API Key not configured.")
+        return
+
+    subject = f"🏠 New PG Visit Inquiry: {name}"
+    body = f"""
+    <h3>You have received a new PG visit inquiry!</h3>
+    <ul>
+      <li><strong>Guest Name:</strong> {name}</li>
+      <li><strong>Mobile No:</strong> {phone}</li>
+      <li><strong>Room Type:</strong> {room_type}</li>
+      <li><strong>Visit Date:</strong> {visit_date}</li>
+      <li><strong>Inquiry Logged:</strong> {created_at}</li>
+    </ul>
+    <p>Access your Admin Drawer on the website to manage this lead.</p>
+    """
+
+    payload = {
+        "from": "onboarding@resend.dev",
+        "to": [RECEIVER_EMAIL],
+        "subject": subject,
+        "html": body
+    }
+
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
     try:
-        subject = f"🏠 New PG Visit Inquiry: {name}"
-        body = f"""
-        You have received a new PG visit inquiry!
-
-        👤 Guest Name: {name}
-        📞 Mobile No: {phone}
-        🛏️ Room Type: {room_type}
-        📅 Visit Date: {visit_date}
-        🕒 Inquiry Logged: {created_at}
-
-        Access your Admin Drawer on the website to manage this lead.
-        """
-
-        msg = MIMEMultipart()
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = RECEIVER_EMAIL
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
-
-        server = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
-        server.starttls()
-        server.login(SENDER_EMAIL, GMAIL_APP_PASSWORD.replace(" ", ""))
-        server.send_message(msg)
-        server.quit()
-        print(f"✅ Email notification delivered to {RECEIVER_EMAIL}")
+        response = requests.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=10)
+        if response.status_code == 200 or response.status_code == 201:
+            print(f"✅ Email notification delivered successfully to {RECEIVER_EMAIL}")
+        else:
+            print(f"❌ Resend API Error ({response.status_code}): {response.text}")
     except Exception as e:
-        print(f"❌ Failed to send email alert: {e}")
+        print(f"❌ Failed to deliver email alert: {e}")
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -85,7 +91,6 @@ def add_inquiry():
     visit_date = data.get('date', 'N/A')
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-    # Save to Database
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
@@ -95,7 +100,7 @@ def add_inquiry():
     conn.commit()
     conn.close()
 
-    # Trigger Email in Background Thread
+    # Trigger HTTP Email in Background Thread
     threading.Thread(target=send_email_worker, args=(name, phone, room_type, visit_date, created_at)).start()
 
     print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {room_type} | {visit_date}\n")
