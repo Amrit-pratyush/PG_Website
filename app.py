@@ -1,16 +1,57 @@
-from flask import Flask, request, jsonify, send_from_directory, Response
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import sqlite3
 from datetime import datetime
 import os
-import csv
-import io
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 CORS(app)
 
 DB_NAME = 'pg_leads.db'
 ADMIN_PASSWORD = 'admin@123'
+
+# --- Email Notification Configuration ---
+SENDER_EMAIL = "your_email@gmail.com"           # Your Gmail address
+RECEIVER_EMAIL = "tsmcalaway@gmail.com"         # Where you want to receive the alerts
+GMAIL_APP_PASSWORD = "firypxscsjjslciz" # 16-letter app password (no spaces)
+
+def send_email_alert(name, phone, room_type, visit_date, created_at):
+    """Sends an instant email notification for every new inquiry."""
+    if "your_16_char_app_password" in GMAIL_APP_PASSWORD:
+        print("⚠️ Email alert skipped: App Password not configured.")
+        return
+
+    subject = f"🏠 New PG Visit Inquiry: {name}"
+    body = f"""
+    You have received a new PG visit inquiry!
+
+    👤 Guest Name: {name}
+    📞 Mobile No: {phone}
+    🛏️ Room Type: {room_type}
+    📅 Visit Date: {visit_date}
+    🕒 Inquiry Logged: {created_at}
+
+    Access your Admin Drawer on the website to manage this lead.
+    """
+
+    msg = MIMEMultipart()
+    msg['From'] = SENDER_EMAIL
+    msg['To'] = RECEIVER_EMAIL
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body, 'plain'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(SENDER_EMAIL, GMAIL_APP_PASSWORD.replace(" ", ""))
+        server.send_message(msg)
+        server.quit()
+        print(f"✅ Email notification delivered to {RECEIVER_EMAIL}")
+    except Exception as e:
+        print(f"❌ Failed to send email alert: {e}")
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -26,7 +67,6 @@ def init_db():
             created_at TEXT NOT NULL
         )
     ''')
-    # Add status column if existing database doesn't have it
     try:
         cursor.execute("ALTER TABLE inquiries ADD COLUMN status TEXT DEFAULT 'New'")
     except sqlite3.OperationalError:
@@ -48,6 +88,7 @@ def add_inquiry():
     visit_date = data.get('date', 'N/A')
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
+    # Save to Database
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
@@ -56,6 +97,9 @@ def add_inquiry():
     )
     conn.commit()
     conn.close()
+
+    # Trigger Instant Email Alert
+    send_email_alert(name, phone, room_type, visit_date, created_at)
 
     print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {room_type} | {visit_date}\n")
     return jsonify({"status": "success", "message": "Inquiry recorded!"}), 201
