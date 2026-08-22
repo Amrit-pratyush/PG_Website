@@ -56,7 +56,7 @@ selectRoomButtons.forEach((btn) => {
 // Admin Lead Fetching
 async function fetchLeads(promptPassword = false) {
   if (!currentAdminKey && promptPassword) {
-    const password = prompt('Enter Admin Passcode (Default: admin@123):');
+    const password = prompt('Enter Admin Passcode (Default: ning@!23):');
     if (!password) return;
     currentAdminKey = password;
     sessionStorage.setItem('admin_token', password);
