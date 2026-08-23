@@ -145,7 +145,7 @@
   <section id="contact" class="section contact-section">
     <div class="contact-card">
       <h2>Schedule a Visit</h2>
-      <p>Drop your details below to schedule an in-person room visit.</p>
+      <p>Select your preferred location and drop your details below.</p>
       <form id="bookingForm">
         <div class="input-group">
           <label for="name">Full Name</label>
@@ -154,6 +154,14 @@
         <div class="input-group">
           <label for="phone">Phone Number</label>
           <input type="tel" id="phone" placeholder="10-digit mobile number" required />
+        </div>
+        <div class="input-group">
+          <label for="location">Preferred PG Branch</label>
+          <select id="location" required>
+            <option value="HSR Layout (Branch 1)">HSR Layout (Branch 1)</option>
+            <option value="Koramangala (Branch 2)">Koramangala (Branch 2)</option>
+            <option value="Electronic City (Branch 3)">Electronic City (Branch 3)</option>
+          </select>
         </div>
         <div class="input-group">
           <label for="roomType">Preferred Room</label>
@@ -172,10 +180,10 @@
     </div>
   </section>
 
-<!-- Admin Lead Drawer -->
+  <!-- Admin Lead Drawer -->
   <div class="admin-drawer" id="adminDrawer">
     <div class="admin-header">
-      <h3><i class="fa-solid fa-database"></i> Live Database Leads (<span id="inquiryCount">0</span>)</h3>
+      <h3><i class="fa-solid fa-database"></i> Live Database Leads (<span id="inquiryCountDrawer">0</span>)</h3>
       <button id="closeAdminBtn" class="btn-icon-close">&times;</button>
     </div>
     

@@ -1,231 +1,275 @@
-const API_URL = '/api';
+document.addEventListener('DOMContentLoaded', () => {
+  let cachedAdminPassword = '';
+  let leadsData = [];
 
-// UI Elements
-const bookingForm = document.getElementById('bookingForm');
-const roomTypeSelect = document.getElementById('roomType');
-const inquiryCountSpan = document.getElementById('inquiryCount');
-const adminDrawer = document.getElementById('adminDrawer');
-const toggleAdminBtn = document.getElementById('toggleAdminBtn');
-const closeAdminBtn = document.getElementById('closeAdminBtn');
-const inquiryList = document.getElementById('inquiryList');
-const exportCsvBtn = document.getElementById('exportCsvBtn');
+  // Filter functionality
+  const filterBtns = document.querySelectorAll('.filter-btn');
+  const roomCards = document.querySelectorAll('.room-card');
 
-const modal = document.getElementById('confirmationModal');
-const modalHeading = document.getElementById('modalHeading');
-const modalBody = document.getElementById('modalBody');
-const modalCloseBtn = document.getElementById('modalCloseBtn');
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const filter = btn.getAttribute('data-filter');
 
-let currentAdminKey = sessionStorage.getItem('admin_token') || null;
-let currentLeads = [];
+      roomCards.forEach(card => {
+        if (filter === 'all' || card.getAttribute('data-category') === filter) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    });
+  });
 
-const datePicker = document.getElementById('visitDate');
-if (datePicker) {
-  datePicker.min = new Date().toISOString().split('T')[0];
-}
+  // Select room button pre-fills room dropdown
+  const selectRoomBtns = document.querySelectorAll('.select-room-btn');
+  const roomTypeSelect = document.getElementById('roomType');
 
-// Room Filters
-const filterButtons = document.querySelectorAll('.filter-btn');
-const roomCards = document.querySelectorAll('.room-card');
-
-filterButtons.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    filterButtons.forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-
-    const filterValue = btn.getAttribute('data-filter');
-    roomCards.forEach((card) => {
-      const category = card.getAttribute('data-category');
-      if (filterValue === 'all' || filterValue === category) {
-        card.classList.remove('hidden');
-      } else {
-        card.classList.add('hidden');
+  selectRoomBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const room = btn.getAttribute('data-room');
+      if (roomTypeSelect) {
+        roomTypeSelect.value = room;
+      }
+      const contactSection = document.getElementById('contact');
+      if (contactSection) {
+        contactSection.scrollIntoView({ behavior: 'smooth' });
       }
     });
   });
-});
 
-// Select Room from Card
-const selectRoomButtons = document.querySelectorAll('.select-room-btn');
-selectRoomButtons.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    roomTypeSelect.value = btn.getAttribute('data-room');
-    document.getElementById('contact').scrollIntoView({ behavior: 'smooth' });
-  });
-});
+  // Modal helpers
+  const modal = document.getElementById('confirmationModal');
+  const modalCloseBtn = document.getElementById('modalCloseBtn');
+  const modalHeading = document.getElementById('modalHeading');
+  const modalBody = document.getElementById('modalBody');
 
-// Admin Lead Fetching
-async function fetchLeads(promptPassword = false) {
-  if (!currentAdminKey && promptPassword) {
-    const password = prompt('Enter Admin Passcode (Default: ning@!23):');
-    if (!password) return;
-    currentAdminKey = password;
-    sessionStorage.setItem('admin_token', password);
+  function showModal(title, message) {
+    if (modalHeading) modalHeading.textContent = title;
+    if (modalBody) modalBody.textContent = message;
+    if (modal) modal.classList.add('active');
   }
 
-  if (!currentAdminKey) return;
-
-  try {
-    const res = await fetch(`${API_URL}/leads`, {
-      headers: { 'Authorization': currentAdminKey }
+  if (modalCloseBtn) {
+    modalCloseBtn.addEventListener('click', () => {
+      if (modal) modal.classList.remove('active');
     });
+  }
 
-    if (res.status === 401) {
-      sessionStorage.removeItem('admin_token');
-      currentAdminKey = null;
-      alert('Incorrect password! Access denied.');
-      adminDrawer.classList.remove('open');
+  // Handle Form Submission
+  const bookingForm = document.getElementById('bookingForm');
+  if (bookingForm) {
+    bookingForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const name = document.getElementById('name').value.trim();
+      const phone = document.getElementById('phone').value.trim();
+      const location = document.getElementById('location').value;
+      const roomType = document.getElementById('roomType').value;
+      const date = document.getElementById('visitDate').value;
+
+      const payload = { name, phone, location, roomType, date };
+
+      try {
+        const response = await fetch('/api/inquire', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          showModal('Inquiry Submitted! 🎉', `Thank you ${name}! We received your request for ${location} (${roomType}) on ${date}. Our team will contact you shortly.`);
+          bookingForm.reset();
+          if (cachedAdminPassword) {
+            fetchLeads(cachedAdminPassword);
+          }
+        } else {
+          showModal('Error', 'Failed to submit inquiry. Please try again.');
+        }
+      } catch (err) {
+        console.error(err);
+        showModal('Error', 'Server connection error. Please try again.');
+      }
+    });
+  }
+
+  // Admin Drawer Elements
+  const adminDrawer = document.getElementById('adminDrawer');
+  const toggleAdminBtn = document.getElementById('toggleAdminBtn');
+  const closeAdminBtn = document.getElementById('closeAdminBtn');
+  const inquiryList = document.getElementById('inquiryList');
+  const inquiryCount = document.getElementById('inquiryCount');
+  const inquiryCountDrawer = document.getElementById('inquiryCountDrawer');
+  const exportCsvBtn = document.getElementById('exportCsvBtn');
+
+  if (toggleAdminBtn) {
+    toggleAdminBtn.addEventListener('click', () => {
+      adminDrawer.classList.add('active');
+      if (!cachedAdminPassword) {
+        renderAuthPrompt();
+      } else {
+        fetchLeads(cachedAdminPassword);
+      }
+    });
+  }
+
+  if (closeAdminBtn) {
+    closeAdminBtn.addEventListener('click', () => {
+      adminDrawer.classList.remove('active');
+    });
+  }
+
+  function renderAuthPrompt() {
+    inquiryList.innerHTML = `
+      <div style="padding: 1.5rem; text-align: center;">
+        <h4 style="color: #f1f5f9; margin-bottom: 0.5rem;">Admin Authentication</h4>
+        <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 1.25rem;">Enter admin password to view and manage leads</p>
+        <input type="password" id="adminPassInput" placeholder="Enter Admin Password" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 1rem; box-sizing: border-box;" autocomplete="current-password" />
+        <button id="authBtn" style="width: 100%; background: #3b82f6; color: #fff; border: none; padding: 0.75rem; border-radius: 8px; font-weight: 600; cursor: pointer;">Unlock Leads</button>
+      </div>
+    `;
+
+    const authBtn = document.getElementById('authBtn');
+    const adminPassInput = document.getElementById('adminPassInput');
+
+    const handleAuth = () => {
+      const pass = adminPassInput.value.trim();
+      if (pass) {
+        fetchLeads(pass);
+      }
+    };
+
+    authBtn.addEventListener('click', handleAuth);
+    adminPassInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') handleAuth();
+    });
+  }
+
+  async function fetchLeads(password) {
+    inquiryList.innerHTML = `<p style="padding: 1rem; color: #94a3b8; text-align: center;">Loading leads...</p>`;
+
+    try {
+      const response = await fetch('/api/leads', {
+        headers: { 'Authorization': password }
+      });
+
+      if (response.status === 401) {
+        renderAuthPrompt();
+        alert('Incorrect password. Access denied.');
+        cachedAdminPassword = '';
+        return;
+      }
+
+      cachedAdminPassword = password;
+      leadsData = await response.json();
+
+      if (inquiryCount) inquiryCount.textContent = leadsData.length;
+      if (inquiryCountDrawer) inquiryCountDrawer.textContent = leadsData.length;
+
+      renderLeads(leadsData);
+    } catch (err) {
+      console.error(err);
+      inquiryList.innerHTML = `<p style="padding: 1rem; color: #ef4444; text-align: center;">Failed to load leads.</p>`;
+    }
+  }
+
+  function renderLeads(leads) {
+    if (!leads || leads.length === 0) {
+      inquiryList.innerHTML = `<p style="padding: 1.5rem; color: #94a3b8; text-align: center;">No leads recorded yet.</p>`;
       return;
     }
 
-    currentLeads = await res.json();
-    inquiryCountSpan.textContent = currentLeads.length;
-
-    if (currentLeads.length === 0) {
-      inquiryList.innerHTML = '<p style="color: #94a3b8; text-align: center; margin-top: 1.5rem;">No leads in database yet.</p>';
-      return;
-    }
-
-    inquiryList.innerHTML = currentLeads.map(lead => `
-      <div class="lead-card" style="position: relative; background: #1e293b; padding: 1rem; border-radius: 8px; margin-bottom: 0.8rem; border-left: 4px solid #3b82f6;">
-        <button class="btn-delete-lead" onclick="deleteLead(${lead.id})" title="Delete Lead" style="position: absolute; top: 10px; right: 10px; background: none; border: none; color: #ef4444; cursor: pointer;">
-          <i class="fa-solid fa-trash"></i>
-        </button>
-        <h4 style="margin-bottom: 0.3rem; color: #f8fafc;">${escapeHTML(lead.name)}</h4>
-        <p style="margin: 0.2rem 0; font-size: 0.85rem;"><i class="fa-solid fa-phone" style="color: #10b981;"></i> <a href="tel:${escapeHTML(lead.phone)}" style="color: #94a3b8; text-decoration: none;">${escapeHTML(lead.phone)}</a></p>
-        <p style="margin: 0.2rem 0; font-size: 0.85rem;"><i class="fa-solid fa-bed" style="color: #3b82f6;"></i> ${escapeHTML(lead.roomType)}</p>
-        <p style="margin: 0.2rem 0; font-size: 0.85rem;"><i class="fa-regular fa-calendar" style="color: #f59e0b;"></i> Visit: ${escapeHTML(lead.date)}</p>
+    inquiryList.innerHTML = leads.map(lead => `
+      <div style="background: #1e293b; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; border: 1px solid #334155;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.4rem;">
+          <strong style="color: #f8fafc; font-size: 1rem;">${escapeHtml(lead.name)}</strong>
+          <span style="background: #0284c7; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">
+            ${escapeHtml(lead.location || 'Main Branch')}
+          </span>
+        </div>
+        <p style="margin: 0.25rem 0; color: #cbd5e1; font-size: 0.85rem;"><i class="fa-solid fa-phone" style="width: 16px; color: #38bdf8;"></i> <a href="tel:${lead.phone}" style="color: #38bdf8; text-decoration: none;">${escapeHtml(lead.phone)}</a></p>
+        <p style="margin: 0.25rem 0; color: #cbd5e1; font-size: 0.85rem;"><i class="fa-solid fa-bed" style="width: 16px; color: #38bdf8;"></i> ${escapeHtml(lead.roomType)}</p>
+        <p style="margin: 0.25rem 0; color: #cbd5e1; font-size: 0.85rem;"><i class="fa-solid fa-calendar-day" style="width: 16px; color: #38bdf8;"></i> Visit Date: <strong>${escapeHtml(lead.date)}</strong></p>
+        <p style="margin: 0.25rem 0; color: #64748b; font-size: 0.75rem;"><i class="fa-solid fa-clock" style="width: 16px;"></i> Logged: ${escapeHtml(lead.timestamp)}</p>
         
-        <div style="margin-top: 0.6rem; display: flex; justify-content: space-between; align-items: center;">
-          <select onchange="updateLeadStatus(${lead.id}, this.value)" style="background: #0f172a; color: #e2e8f0; border: 1px solid #334155; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">
-            <option value="New" ${lead.status === 'New' ? 'selected' : ''}>🟡 New</option>
-            <option value="Contacted" ${lead.status === 'Contacted' ? 'selected' : ''}>🔵 Contacted</option>
-            <option value="Visited" ${lead.status === 'Visited' ? 'selected' : ''}>🟢 Visited</option>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #334155;">
+          <select class="status-select" data-id="${lead.id}" style="background: #0f172a; color: #f8fafc; border: 1px solid #475569; padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.8rem;">
+            <option value="New" ${lead.status === 'New' ? 'selected' : ''}>New</option>
+            <option value="Contacted" ${lead.status === 'Contacted' ? 'selected' : ''}>Contacted</option>
+            <option value="Visited" ${lead.status === 'Visited' ? 'selected' : ''}>Visited</option>
+            <option value="Booked" ${lead.status === 'Booked' ? 'selected' : ''}>Booked</option>
+            <option value="Closed" ${lead.status === 'Closed' ? 'selected' : ''}>Closed</option>
           </select>
-          <small style="color: #64748b; font-size: 0.75rem;">${lead.timestamp}</small>
+          <button class="delete-lead-btn" data-id="${lead.id}" style="background: #ef4444; color: white; border: none; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.8rem; cursor: pointer;">
+            <i class="fa-solid fa-trash"></i>
+          </button>
         </div>
       </div>
     `).join('');
-  } catch (err) {
-    inquiryList.innerHTML = '<p style="color: #ef4444; text-align: center;">Unable to connect to leads API.</p>';
-  }
-}
 
-// Update Status Handler
-window.updateLeadStatus = async function (id, status) {
-  try {
-    await fetch(`${API_URL}/leads/${id}/status`, {
-      method: 'PATCH',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': currentAdminKey 
-      },
-      body: JSON.stringify({ status })
-    });
-  } catch (err) {
-    alert('Failed to update status.');
-  }
-};
-
-// Export to CSV Handler
-if (exportCsvBtn) {
-  exportCsvBtn.addEventListener('click', () => {
-    if (!currentLeads || currentLeads.length === 0) {
-      alert('No leads available to export.');
-      return;
-    }
-
-    const headers = ['ID', 'Name', 'Phone', 'Room Type', 'Visit Date', 'Status', 'Timestamp'];
-    const csvRows = [headers.join(',')];
-
-    currentLeads.forEach(lead => {
-      const row = [
-        lead.id,
-        `"${lead.name.replace(/"/g, '""')}"`,
-        `"${lead.phone}"`,
-        `"${lead.roomType}"`,
-        `"${lead.date}"`,
-        `"${lead.status}"`,
-        `"${lead.timestamp}"`
-      ];
-      csvRows.push(row.join(','));
+    // Status change listener
+    document.querySelectorAll('.status-select').forEach(sel => {
+      sel.addEventListener('change', async (e) => {
+        const leadId = e.target.getAttribute('data-id');
+        const newStatus = e.target.value;
+        await fetch(`/api/leads/${leadId}/status`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': cachedAdminPassword
+          },
+          body: JSON.stringify({ status: newStatus })
+        });
+      });
     });
 
-    const csvData = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const csvUrl = URL.createObjectURL(csvData);
-    const link = document.createElement('a');
-    link.href = csvUrl;
-    link.setAttribute('download', `UrbanNest_Leads_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  });
-}
-
-// Form Submit Handler
-bookingForm.addEventListener('submit', async function (e) {
-  e.preventDefault();
-
-  const name = document.getElementById('name').value.trim();
-  const phone = document.getElementById('phone').value.trim();
-  const roomType = roomTypeSelect.value;
-  const visitDate = document.getElementById('visitDate').value;
-
-  if (!/^[0-9]{10}$/.test(phone)) {
-    alert('Please enter a valid 10-digit mobile number.');
-    return;
+    // Delete lead listener
+    document.querySelectorAll('.delete-lead-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const leadId = btn.getAttribute('data-id');
+        if (confirm('Delete this inquiry permanently?')) {
+          await fetch(`/api/leads/${leadId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': cachedAdminPassword }
+          });
+          fetchLeads(cachedAdminPassword);
+        }
+      });
+    });
   }
 
-  const payload = { name, phone, roomType, date: visitDate };
+  // CSV Export
+  if (exportCsvBtn) {
+    exportCsvBtn.addEventListener('click', () => {
+      if (!leadsData || leadsData.length === 0) {
+        alert('No leads available to export.');
+        return;
+      }
 
-  try {
-    const res = await fetch(`${API_URL}/inquire`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      let csv = 'ID,Name,Phone,Branch Location,Room Type,Visit Date,Status,Timestamp\n';
+      leadsData.forEach(l => {
+        csv += `"${l.id}","${l.name}","${l.phone}","${l.location || 'Main Branch'}","${l.roomType}","${l.date}","${l.status}","${l.timestamp}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `PG_Leads_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     });
+  }
 
-    if (res.ok) {
-      modalHeading.textContent = `Thank You, ${name}!`;
-      modalBody.innerHTML = `Your visit request for <strong>${roomType}</strong> on <strong>${visitDate}</strong> has been saved.`;
-      modal.classList.add('active');
-      bookingForm.reset();
-      if (currentAdminKey) fetchLeads();
-    } else {
-      alert(`Server returned an error (${res.status}). Please try again.`);
-    }
-  } catch (err) {
-    alert('Network error submitting the form.');
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 });
-
-// Delete Lead Handler
-window.deleteLead = async function (id) {
-  if (!confirm('Are you sure you want to remove this lead?')) return;
-  try {
-    await fetch(`${API_URL}/leads/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': currentAdminKey }
-    });
-    fetchLeads();
-  } catch (err) {
-    alert('Failed to delete lead.');
-  }
-};
-
-// UI Triggers
-toggleAdminBtn.addEventListener('click', () => {
-  adminDrawer.classList.toggle('open');
-  if (adminDrawer.classList.contains('open')) {
-    fetchLeads(true);
-  }
-});
-
-closeAdminBtn.addEventListener('click', () => adminDrawer.classList.remove('open'));
-modalCloseBtn.addEventListener('click', () => modal.classList.remove('active'));
-modal.addEventListener('click', (e) => {
-  if (e.target === modal) modal.classList.remove('active');
-});
-
-function escapeHTML(str) {
-  return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
-}

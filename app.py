@@ -12,7 +12,7 @@ DB_NAME = 'pg_leads.db'
 ADMIN_PASSWORD = 'admin@123'
 RECEIVER_EMAIL = "amritpratyush84@gmail.com"
 
-def send_resend_email(name, phone, room_type, visit_date, created_at):
+def send_resend_email(name, phone, location, room_type, visit_date, created_at):
     """Sends email alert via Resend HTTPS REST API."""
     key = os.environ.get("RESEND_API_KEY", "").strip()
 
@@ -20,14 +20,17 @@ def send_resend_email(name, phone, room_type, visit_date, created_at):
         print("❌ Error: RESEND_API_KEY is empty on Render environment.")
         return
 
-    subject = f"🏠 New PG Visit Inquiry: {name}"
+    subject = f"🏠 New PG Visit Inquiry: {name} ({location})"
     html_content = f"""
     <h2>New PG Booking Inquiry Received!</h2>
     <p><strong>Guest Name:</strong> {name}</p>
     <p><strong>Mobile No:</strong> {phone}</p>
+    <p><strong>Branch Location:</strong> {location}</p>
     <p><strong>Room Type:</strong> {room_type}</p>
     <p><strong>Visit Date:</strong> {visit_date}</p>
-    <p><strong>Time:</strong> {created_at}</p>
+    <p><strong>Time Logged:</strong> {created_at}</p>
+    <hr/>
+    <p>Access your Admin Drawer on the website to manage this lead.</p>
     """
 
     payload = {
@@ -43,7 +46,7 @@ def send_resend_email(name, phone, room_type, visit_date, created_at):
     }
 
     try:
-        print(f"📡 Sending email via Resend API to {RECEIVER_EMAIL}...")
+        print(f"📡 Sending email via Resend API to {RECEIVER_EMAIL} for {location}...")
         response = requests.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=15)
         print(f"📡 Resend Status Code: {response.status_code}")
         print(f"📡 Resend Response: {response.text}")
@@ -63,14 +66,20 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             phone TEXT NOT NULL,
+            location TEXT DEFAULT 'Main Branch',
             room_type TEXT NOT NULL,
             visit_date TEXT NOT NULL,
             status TEXT DEFAULT 'New',
             created_at TEXT NOT NULL
         )
     ''')
+    # Backward compatibility migrations
     try:
         cursor.execute("ALTER TABLE inquiries ADD COLUMN status TEXT DEFAULT 'New'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE inquiries ADD COLUMN location TEXT DEFAULT 'Main Branch'")
     except sqlite3.OperationalError:
         pass
     conn.commit()
@@ -86,6 +95,7 @@ def add_inquiry():
     data = request.get_json(force=True, silent=True) or {}
     name = data.get('name', 'Anonymous')
     phone = data.get('phone', 'N/A')
+    location = data.get('location', 'Main Branch')
     room_type = data.get('roomType', 'Standard')
     visit_date = data.get('date', 'N/A')
     created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -94,16 +104,16 @@ def add_inquiry():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
-        'INSERT INTO inquiries (name, phone, room_type, visit_date, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        (name, phone, room_type, visit_date, 'New', created_at)
+        'INSERT INTO inquiries (name, phone, location, room_type, visit_date, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (name, phone, location, room_type, visit_date, 'New', created_at)
     )
     conn.commit()
     conn.close()
 
-    print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {room_type} | {visit_date}")
+    print(f"\n🔔 [NEW INQUIRY]: {name} | {phone} | {location} | {room_type} | {visit_date}")
 
-    # 2. Dispatch Email Synchronously
-    send_resend_email(name, phone, room_type, visit_date, created_at)
+    # 2. Dispatch Email
+    send_resend_email(name, phone, location, room_type, visit_date, created_at)
 
     return jsonify({"status": "success", "message": "Inquiry recorded!"}), 201
 
@@ -115,12 +125,21 @@ def get_leads():
 
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute('SELECT id, name, phone, room_type, visit_date, status, created_at FROM inquiries ORDER BY id DESC')
+    cursor.execute('SELECT id, name, phone, location, room_type, visit_date, status, created_at FROM inquiries ORDER BY id DESC')
     rows = cursor.fetchall()
     conn.close()
 
     leads = [
-        {"id": r[0], "name": r[1], "phone": r[2], "roomType": r[3], "date": r[4], "status": r[5] or 'New', "timestamp": r[6]}
+        {
+            "id": r[0],
+            "name": r[1],
+            "phone": r[2],
+            "location": r[3] or 'Main Branch',
+            "roomType": r[4],
+            "date": r[5],
+            "status": r[6] or 'New',
+            "timestamp": r[7]
+        }
         for r in rows
     ]
     return jsonify(leads), 200
